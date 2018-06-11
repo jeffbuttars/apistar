@@ -1,6 +1,7 @@
 import asyncio
 import io
 import typing
+from pprint import pformat as pf
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -105,13 +106,16 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
         self.app = app
 
     def send(self, request, *args, **kwargs):
+        print('_ASGIAdapter: outer send')
         scheme, netloc, path, params, query, fragement = urlparse(request.url)
         if ':' in netloc:
             host, port = netloc.split(':', 1)
             port = int(port)
         else:
             host = netloc
-            port = {'http': 80, 'https': 443}[scheme]
+            port = {'http': 80, 'https': 443, 'ws': 80, 'wss': 443}[scheme]
+
+        type_ = {'http': 'http', 'https': 'http', 'ws': 'websocket', 'ws': 'websocket'}[scheme]
 
         # Include the 'host' header.
         if 'host' in request.headers:
@@ -128,7 +132,7 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
         ]
 
         scope = {
-            'type': 'http',
+            'type': type_,
             'http_version': '1.1',
             'method': request.method,
             'path': unquote(path),
@@ -141,7 +145,12 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             'raise_exceptions': True  # Not actually part of the spec.
         }
 
+        if type_ == 'websocket' and 'Sec-WebSocket-Protocol' in request.headers:
+            scope['subprotocols'] = request.headers['Sec-WebSocket-Protocol'].split(',')
+
         async def receive():
+            print('_ASGIAdapter:receive', request, dir(request))
+            print('_ASGIAdapter:receive scope', pf(scope))
             body = request.body
             if isinstance(body, str):
                 body_bytes = body.encode("utf-8")  # type: bytes
@@ -149,12 +158,20 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                 body_bytes = b''
             else:
                 body_bytes = body
+
+            if type_ == 'websocket':
+                return {
+                    'type': 'websocket.connect',
+                }
+
             return {
                 'type': 'http.request',
                 'body': body_bytes,
             }
 
         async def send(message):
+            print('_ASGIAdapter:scope', pf(scope))
+            print('_ASGIAdapter:send', message)
             if message['type'] == 'http.response.start':
                 raw_kwargs['version'] = 11
                 raw_kwargs['status'] = message['status']
@@ -190,6 +207,8 @@ class _TestClient(requests.Session):
         interface = getattr(app, 'interface', None)
         if interface == 'asgi':
             adapter = _ASGIAdapter(app)
+            self.mount('ws://', adapter)
+            self.mount('wss://', adapter)
         else:
             adapter = _WSGIAdapter(app)
         self.mount('http://', adapter)
