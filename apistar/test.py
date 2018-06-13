@@ -104,6 +104,10 @@ class _WSGIAdapter(requests.adapters.HTTPAdapter):
 class _ASGIAdapter(requests.adapters.HTTPAdapter):
     def __init__(self, app: typing.Callable) -> None:
         self.app = app
+        self.websocket = {
+            'connected': False,
+            'connecting': False,
+        }
 
     def send(self, request, *args, **kwargs):
         print('_ASGIAdapter: outer send')
@@ -149,8 +153,8 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             scope['subprotocols'] = request.headers['Sec-WebSocket-Protocol'].split(',')
 
         async def receive():
-            print('_ASGIAdapter:receive', request, dir(request))
-            print('_ASGIAdapter:receive scope', pf(scope))
+            print('_ASGIAdapter:receive', type_)
+            #  print('_ASGIAdapter:receive scope', pf(scope))
             body = request.body
             if isinstance(body, str):
                 body_bytes = body.encode("utf-8")  # type: bytes
@@ -160,6 +164,8 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                 body_bytes = body
 
             if type_ == 'websocket':
+                print('_ASGIAdapter:receive', type_, 'connecting')
+                self.websocket['connecting'] = True
                 return {
                     'type': 'websocket.connect',
                 }
@@ -170,7 +176,8 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             }
 
         async def send(message):
-            print('_ASGIAdapter:scope', pf(scope))
+            print('_ASGIAdapter:send', type_)
+            #  print('_ASGIAdapter:scope', pf(scope))
             print('_ASGIAdapter:send', message)
             if message['type'] == 'http.response.start':
                 raw_kwargs['version'] = 11
@@ -185,6 +192,25 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                 raw_kwargs['body'] = io.BytesIO(message['body'])
             elif message['type'] == 'http.disconnect':
                 pass
+            elif message['type'] == 'websocket.close':
+                print('_ASGIAdapter:send websocket.close', pf(self.websocket))
+                if self.websocket['connecting']:
+                    print('_ASGIAdapter:send websocket.close instead of connect')
+                    # returning HTTP status code 403
+                    raw_kwargs['status'] = 403
+                    raw_kwargs['reason'] = 'WebSocket closed'
+                    raw_kwargs['body'] = io.BytesIO(b'')
+                    self.websocket['connecting'] = False
+                    self.websocket['connected'] = False
+            elif message['type'] == 'websocket.send':
+                print('_ASGIAdapter:send websocket.send', pf(self.websocket))
+                if not self.websocket['connected']:
+                    print('_ASGIAdapter:send websocket.send closed')
+                    raise Exception("WebSocket not connected")
+            elif message['type'] == 'websocket.accept':
+                if not self.websocket['connecting']:
+                    raise Exception("Send accept when WebSocket not connecting")
+
             elif message['type'] == 'http.exc_info':
                 exc_info = message['exc_info']
                 raise exc_info[0].with_traceback(exc_info[1], exc_info[2])
@@ -197,6 +223,7 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(connection(receive, send))
 
+        print('_ASGIAdapter:send building response', pf(raw_kwargs))
         raw = requests.packages.urllib3.HTTPResponse(**raw_kwargs)
         return self.build_response(request, raw)
 

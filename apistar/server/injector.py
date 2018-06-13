@@ -124,6 +124,7 @@ class ASyncInjector(Injector):
             self.resolver_cache[funcs] = steps
 
         for func, is_async, kwargs, consts, output_name, set_return in steps:
+            print('ASyncInjector:run_async', func, kwargs)
             func_kwargs = {key: state[val] for key, val in kwargs.items()}
             func_kwargs.update(consts)
             if is_async:
@@ -133,4 +134,5 @@ class ASyncInjector(Injector):
             if set_return:
                 state['return_value'] = state[output_name]
 
+        print('ASyncInjector:run_async returning', output_name, state[output_name])
         return state[output_name]

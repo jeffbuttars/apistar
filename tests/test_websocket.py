@@ -8,60 +8,89 @@ from apistar.server.app import ASyncApp
 from apistar.server.asgi import ASGIReceive, ASGIScope, ASGISend
 
 
-async def connect_request(scope: ASGIScope, receive: ASGIReceive):
-    print('connect_request scope', pf(scope))
+async def connect_accept(receive: ASGIReceive, send: ASGISend):
+    print('connect_request receiving message...', receive)
     message = await receive()
-    print('connect_request message', pf(message))
-    return message
+    assert(len(message.keys()) == 1)
+    assert(message == {'type': 'websocket.connect'})
+
+    print('connect_request message:', pf(message))
+    await send({'type': 'websocket.accept'})
+
+    return http.Response('')
+
+
+async def connect_deny(scope: ASGIScope, receive: ASGIReceive, send: ASGISend):
+    print('connect_deny receiving message...', receive)
+    message = await receive()
+    #  print('connect_request scope', pf(scope))
+    print('connect_deny message:', pf(message))
+    assert(len(message.keys()) == 1)
+    assert(message == {'type': 'websocket.connect'})
+
+    print('connect_deny sending close message:')
+    await send({
+        'type': 'websocket.close',
+        'code': 1001,
+    })
+
+
+async def connect_deny_on_return(receive: ASGIReceive):
+    print('connect_deny receiving message...', receive)
+    message = await receive()
+    #  print('connect_request scope', pf(scope))
+    print('connect_deny message:', pf(message))
+    assert(len(message.keys()) == 1)
+    assert(message == {'type': 'websocket.connect'})
+
+    print('connect_deny_on_return sending close message:')
+    return 'Denied!'
 
 
 routes = [
-    Route('/connect/', 'GET', connect_request),
-    #  Route('/method/', 'GET', get_method),
-    #  Route('/scheme/', 'GET', get_scheme),
-    #  Route('/host/', 'GET', get_host),
-    #  Route('/port/', 'GET', get_port),
-    #  Route('/path/', 'GET', get_path),
-    #  Route('/query_string/', 'GET', get_query_string),
-    #  Route('/query_params/', 'GET', get_query_params),
-    #  Route('/page_query_param/', 'GET', get_page_query_param),
-    #  Route('/url/', 'GET', get_url),
-    #  Route('/headers/', 'GET', get_headers),
-    #  Route('/accept_header/', 'GET', get_accept_header),
-    #  Route('/missing_header/', 'GET', get_missing_header),
-    #  Route('/path_params/{example}/', 'GET', get_path_params),
-    #  Route('/full_path_params/{+example}', 'GET', get_path_params, name='full_path_params'),
-    #  Route('/return_string/', 'GET', return_string),
-    #  Route('/return_data/', 'GET', return_data),
-    #  Route('/return_response/', 'GET', return_response),
+    Route('/connect/accept/', 'GET', connect_accept),
+    Route('/connect/deny/', 'GET', connect_deny),
+    Route('/connect/deny/return/', 'GET', connect_deny_on_return),
 ]
 
 
 ws_headers = {
     'Upgrade': 'websocket',
     'Connection': 'upgrade',
+    'Sec-WebSocket-Protocol': 'v1.test.encode.io',
 }
 
 
 @pytest.fixture(scope='module')
-def client(request):
+def client():
     app = ASyncApp(routes=routes)
     return test.TestClient(app, scheme='ws')
 
 
-def test_connect(client):
+def get_headers(hdrs: dict = None):
     headers = ws_headers.copy()
     headers['Sec-WebSocket-Key'] = uuid4().hex
-    headers['Sec-WebSocket-Protocol'] = 'v1.test.encode.io'
 
-    response = client.get('/connect/', headers=headers)
-    message = response.json()
-    #  print('RESPONSE:', response, dir(response))
-    #  print('RESPONSE req:', response.request, response.request.headers)
-    #  print('RESPONSE head:', response.headers)
-    #  print('RESPONSE conn:', response.connection)
-    #  print('RESPONSE content:', response.content)
-    print('RESPONSE json:', message)
+    if hdrs:
+        headers.update(hdrs)
 
-    assert(len(message.keys()) == 1)
-    assert(message == {'type': 'websocket.connect'})
+    return headers
+
+
+#  def test_connect_accept(client):
+#      response = client.get('/connect/accept/', headers=get_headers())
+#      message = response.text
+#      print('test_connect_accept', message)
+
+#      assert(message == '')
+
+
+def test_connect_deny(client):
+    headers = ws_headers.copy()
+    headers['Sec-WebSocket-Key'] = uuid4().hex
+
+    response = client.get('/connect/deny/', headers=headers)
+    print('test_connect_deny', response)
+    print('test_connect_deny headers', response.headers)
+    print('test_connect_deny content', response.content)
+    assert(response.status_code == 403)
