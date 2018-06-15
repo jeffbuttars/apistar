@@ -3,6 +3,7 @@ from inspect import Parameter
 from urllib.parse import parse_qsl
 
 from apistar import http
+from apistar.server.websocket import WebSocket
 from apistar.server.components import Component
 
 ASGIScope = typing.NewType('ASGIScope', dict)
@@ -126,6 +127,15 @@ class RequestComponent(Component):
         return http.Request(method, url, headers, body)
 
 
+class WebSocketComponent(Component):
+    def resolve(self,
+                scope: ASGIScope,
+                send: ASGISend,
+                receive: ASGIReceive) -> WebSocket:
+
+        return WebSocket(scope, send, receive)
+
+
 ASGI_COMPONENTS = (
     MethodComponent(),
     URLComponent(),
@@ -139,5 +149,6 @@ ASGI_COMPONENTS = (
     HeadersComponent(),
     HeaderComponent(),
     BodyComponent(),
-    RequestComponent()
+    RequestComponent(),
+    WebSocketComponent()
 )

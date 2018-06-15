@@ -20,6 +20,7 @@ from apistar.server.validation import VALIDATION_COMPONENTS
 from apistar.server.wsgi import (
     RESPONSE_STATUS_TEXT, WSGI_COMPONENTS, WSGIEnviron, WSGIStartResponse
 )
+from apistar.server.websocket import WebSocket, WSState
 
 
 class App():
@@ -309,6 +310,12 @@ class ASyncApp(App):
             }
             method = scope['method']
             path = scope['path']
+
+            if scope['type'] == 'websocket':
+                finalizer = self.finalize_websocket
+            else:
+                finalizer = self.finalize_asgi
+
             print('app:asgi_callable scope', scope)
 
             if self.event_hooks is None:
@@ -327,7 +334,7 @@ class ASyncApp(App):
                         on_request +
                         [route.handler, self.render_response] +
                         on_response +
-                        [self.finalize_asgi]
+                        [finalizer]
                     )
 
                 print('app:asgi_callable run injector with funcs', pf(funcs), pf(state))
@@ -338,7 +345,7 @@ class ASyncApp(App):
                     funcs = (
                         [self.exception_handler] +
                         on_response +
-                        [self.finalize_asgi]
+                        [finalizer]
                     )
                     await self.injector.run_async(funcs, state)
                 except Exception as inner_exc:
@@ -346,24 +353,28 @@ class ASyncApp(App):
                         state['exc'] = inner_exc
                         await self.injector.run_async(on_error, state)
                     finally:
-                        funcs = [self.error_handler, self.finalize_asgi]
+                        funcs = [self.error_handler, finalizer]
                         await self.injector.run_async(funcs, state)
         return asgi_callable
 
-    async def finalize_websocket(self, response: Response, send: ASGISend, scope: ASGIScope):
-        print('app:finalize_websocket', response, send, pf(scope))
+    async def finalize_websocket(
+        self, ws: WebSocket, response: Response, send: ASGISend, scope: ASGIScope):
+        print('app:finalize_websocket', ws, response, send, pf(scope))
         print('app:finalize_websocket resp', response, dir(response), response.content)
 
-        #  # If there is a response, send it and close the socket
-        #  if response and response.content:
-        #      await send({
-        #          'type': 'websocket.send',
-        #          'bytes': response.content,
-        #      })
+        if response.exc_info is not None:
+            if self.debug or scope.get('raise_exceptions', False):
+                exc_info = response.exc_info
+                raise exc_info[0].with_traceback(exc_info[1], exc_info[2])
 
-        #  await send({
-        #      'type': 'websocket.close',
-        #  })
+        if ws.closed:
+            print('WS OPEN, closing it')
+
+            if response.content and ws.connected:
+                print('WS OPEN with response data, sending data and closing it')
+                ws.send(response.content)
+
+            ws.close()
 
     async def finalize_asgi(self, response: Response, send: ASGISend, scope: ASGIScope):
         #  print('app:finalize_asgi', response, send, pf(scope))
