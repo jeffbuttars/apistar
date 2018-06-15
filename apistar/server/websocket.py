@@ -2,8 +2,10 @@ import enum
 import typing
 
 from apistar.exceptions import HTTPException
-from apistar.server.asgi import ASGIReceive, ASGIScope, ASGISend
-from apistar.server.components import Component
+
+#  ASGIScope = typing.NewType('ASGIScope', dict)
+#  ASGIReceive = typing.NewType('ASGIReceive', typing.Callable)
+#  ASGISend = typing.NewType('ASGISend', typing.Callable)
 
 
 class Status():
@@ -143,9 +145,9 @@ class WebSocket(object):
     https://github.com/django/asgiref/blob/master/specs/www.rst
     """
     def __init__(self,
-                 asgi_scope: ASGIScope,
-                 asgi_send: ASGISend,
-                 asgi_receive: ASGIReceive,
+                 asgi_scope: dict,
+                 asgi_send: typing.Callable,
+                 asgi_receive: typing.Callable,
                  ) -> None:
 
         assert asgi_scope.get('type') == 'websocket'
@@ -160,8 +162,16 @@ class WebSocket(object):
         return self._scope.get('subprotocols', [])
 
     @property
-    def state(self):
-        return self._state
+    def connected(self):
+        return self._state == WSState.CONNECTED
+
+    @property
+    def connecting(self):
+        return self._state == WSState.CONNECTING
+
+    @property
+    def closed(self):
+        return self._state == WSState.CLOSED
 
     async def connect(self,
                       subprotocol: str = None,
@@ -169,9 +179,9 @@ class WebSocket(object):
                       close_code: int = status.WS_1000_OK) -> None:
 
         # Accept or Refuse an incoming connection
-        if self.state != WSState.CLOSED:
+        if self._state != WSState.CLOSED:
             raise WebSocketProtocolError(
-                detail="Attempting to connect a WebSocket that is not closed: %s" % self.state
+                detail="Attempting to connect a WebSocket that is not closed: %s" % self._state
             )
 
         # Expecting a connect message
@@ -192,7 +202,7 @@ class WebSocket(object):
         await self.accept(subprotocol)
 
     async def accept(self, subprotocol: str = None) -> None:
-        if self.state != WSState.CONNECTING:
+        if self._state != WSState.CONNECTING:
             raise WebSocketProtocolError(
                 detail="Attempting to accept a WebSocket that is not connecting"
             )
@@ -205,7 +215,7 @@ class WebSocket(object):
         self._state = WSState.CONNECTED
 
     async def receive(self) -> typing.Union[str, bytes]:
-        if self.state != WSState.CONNECTED:
+        if self._state != WSState.CONNECTED:
             raise WebSocketNotConnected()
 
         msg = await self._asgi_receive()
@@ -218,7 +228,7 @@ class WebSocket(object):
 
     async def send(self, data: typing.Union[str, bytes]) -> None:
 
-        if self.state != WSState.CONNECTED:
+        if self._state != WSState.CONNECTED:
             raise WebSocketNotConnected()
 
         msg = {
@@ -234,7 +244,7 @@ class WebSocket(object):
         await self._asgi_send(msg)
 
     async def close(self, code: int = status.WS_1000_OK) -> None:
-        if self.state == WSState.CLOSED:
+        if self._state == WSState.CLOSED:
             raise WebSocketNotConnected()
 
         message = {
@@ -244,12 +254,3 @@ class WebSocket(object):
 
         await self._asgi_send(message)
         self._state = WSState.CLOSED
-
-
-class WebSocketComponent(Component):
-    def resolve(self,
-                scope: ASGIScope,
-                send: ASGISend,
-                receive: ASGIReceive) -> WebSocket:
-
-        return WebSocket(scope, send, receive)
