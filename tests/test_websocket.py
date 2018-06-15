@@ -68,7 +68,7 @@ def test_initial_state():
     assert ws._asgi_send == asgi.send
     assert ws._asgi_receive == asgi.receive
     assert ws._state == WSState.CLOSED
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert ws.subprotocols == []
 
 
@@ -78,7 +78,7 @@ def test_connect_not_closed():
     with pytest.raises(WebSocketProtocolError) as e:
         ws_run(ws.connect)
 
-    assert ws.state == WSState.CONNECTING
+    assert ws.connecting
     assert e.value.status_code == ws_status.WS_1002_PROT_ERROR
     assert 'is not closed' in e.value.detail
 
@@ -90,7 +90,7 @@ def test_connect_not_connect():
     with pytest.raises(WebSocketProtocolError) as e:
         ws_run(ws.connect)
 
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert e.value.status_code == ws_status.WS_1002_PROT_ERROR
     assert 'Expected WebSocket `connection` but got: websocket.receive' in e.value.detail
 
@@ -100,7 +100,7 @@ def test_connect_close():
 
     ws_run(ws.connect, close=True)
 
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.close',
         'code': ws_status.WS_1000_OK,
@@ -112,7 +112,7 @@ def test_connect_close_with_code():
 
     ws_run(ws.connect, close=True, close_code=ws_status.WS_1001_LEAVING)
 
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.close',
         'code': ws_status.WS_1001_LEAVING,
@@ -124,7 +124,7 @@ def test_connect_accept():
 
     ws_run(ws.connect)
 
-    assert ws.state == WSState.CONNECTED
+    assert ws.connected
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.accept',
     }
@@ -146,7 +146,7 @@ def test_accept():
 
     ws_run(ws.accept)
 
-    assert ws.state == WSState.CONNECTED
+    assert ws.connected
     assert asgi.sq.get_nowait() == {'type': 'websocket.accept'}
 
 
@@ -157,7 +157,7 @@ def test_accept_not_connecting():
         with pytest.raises(WebSocketProtocolError) as e:
             ws_run(ws.accept)
 
-        assert ws.state == state
+        assert ws._state == state
         assert e.value.status_code == ws_status.WS_1002_PROT_ERROR
         assert 'Attempting to accept a WebSocket that is not connecting' in e.value.detail
 
@@ -168,7 +168,7 @@ def test_send_not_connected():
     with pytest.raises(WebSocketNotConnected) as e:
         ws_run(ws.send, '')
 
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert e.value.status_code == ws_status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
@@ -177,7 +177,7 @@ def test_send_not_connected():
     with pytest.raises(WebSocketNotConnected) as e:
         ws_run(ws.send, '')
 
-    assert ws.state == WSState.CONNECTING
+    assert ws.connecting
     assert e.value.status_code == ws_status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
@@ -187,7 +187,7 @@ def test_send_text():
 
     ws_run(ws.send, '{"json": "message"}')
 
-    assert ws.state == WSState.CONNECTED
+    assert ws.connected
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.send',
         'text':  '{"json": "message"}',
@@ -199,7 +199,7 @@ def test_send_bytes():
 
     ws_run(ws.send, b'{"json": "message"}')
 
-    assert ws.state == WSState.CONNECTED
+    assert ws.connected
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.send',
         'bytes':  b'{"json": "message"}',
@@ -213,7 +213,7 @@ def test_receive_not_connected():
         with pytest.raises(WebSocketNotConnected) as e:
             ws_run(ws.receive)
 
-        assert ws.state == state
+        assert ws._state == state
         assert e.value.status_code == ws_status.WS_1000_OK
         assert 'WebSocket is not connected or open' in e.value.detail
 
@@ -229,7 +229,7 @@ def test_receive_disconnect():
     with pytest.raises(WebSocketDisconnect) as e:
         ws_run(ws.receive)
 
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert e.value.status_code == ws_status.WS_1001_LEAVING
     assert 'WebSocket has been disconnected' in e.value.detail
 
@@ -244,7 +244,7 @@ def test_receive_text():
 
     resp = ws_run(ws.receive)
 
-    assert ws.state == WSState.CONNECTED
+    assert ws.connected
     assert resp == '{"json": "message"}'
 
 
@@ -258,7 +258,7 @@ def test_receive_bytes():
 
     resp = ws_run(ws.receive)
 
-    assert ws.state == WSState.CONNECTED
+    assert ws.connected
     assert resp == b'{"json": "message"}'
 
 
@@ -268,7 +268,7 @@ def test_close_closed():
     with pytest.raises(WebSocketNotConnected) as e:
         ws_run(ws.close)
 
-    assert ws.state == WSState.CLOSED
+    assert ws.closed
     assert e.value.status_code == ws_status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
@@ -283,7 +283,7 @@ def test_close():
             'code': ws_status.WS_1000_OK,
         }
 
-        assert ws.state == WSState.CLOSED
+        assert ws.closed
 
 
 def test_close_codes():
@@ -307,7 +307,7 @@ def test_close_codes():
                 'code': code,
             }
 
-            assert ws.state == WSState.CLOSED
+            assert ws.closed
 
 
 # ## Client Tests ###
