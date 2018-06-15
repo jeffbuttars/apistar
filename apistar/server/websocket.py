@@ -148,7 +148,7 @@ class WebSocket(object):
                  asgi_receive: ASGIReceive,
                  ) -> None:
 
-        assert asgi_scope['type'] == 'websocket'
+        assert asgi_scope.get('type') == 'websocket'
 
         self._scope = asgi_scope
         self._asgi_send = asgi_send
@@ -162,35 +162,6 @@ class WebSocket(object):
     @property
     def state(self):
         return self._state
-
-    async def send(self, data: typing.Union[str, bytes]) -> None:
-
-        if self.state != WSState.CONNECTED:
-            raise WebSocketNotConnected()
-
-        msg = {
-            'type': 'websocket.send',
-        }
-
-        if data:
-            if isinstance(data, bytes):
-                msg['bytes'] = data
-            else:
-                msg['text'] = data
-
-        await self._asgi_send(msg)
-
-    async def receive(self) -> typing.Union[str, bytes]:
-        if self.state != WSState.CONNECTED:
-            raise WebSocketNotConnected()
-
-        msg = await self._asgi_receive()
-
-        if msg['type'] == 'websocket.disconnect':
-            self.state = WSState.CLOSED
-            raise WebSocketDisconnect(status_code=msg['code'])
-
-        return msg.get('text', msg.get('bytes'))
 
     async def connect(self,
                       subprotocol: str = None,
@@ -233,7 +204,36 @@ class WebSocket(object):
         await self._asgi_send(msg)
         self._state = WSState.CONNECTED
 
-    async def close(self, code: int = status.OK) -> None:
+    async def receive(self) -> typing.Union[str, bytes]:
+        if self.state != WSState.CONNECTED:
+            raise WebSocketNotConnected()
+
+        msg = await self._asgi_receive()
+
+        if msg['type'] == 'websocket.disconnect':
+            self._state = WSState.CLOSED
+            raise WebSocketDisconnect(status_code=msg['code'])
+
+        return msg.get('text', msg.get('bytes'))
+
+    async def send(self, data: typing.Union[str, bytes]) -> None:
+
+        if self.state != WSState.CONNECTED:
+            raise WebSocketNotConnected()
+
+        msg = {
+            'type': 'websocket.send',
+        }
+
+        if data:
+            if isinstance(data, bytes):
+                msg['bytes'] = data
+            else:
+                msg['text'] = data
+
+        await self._asgi_send(msg)
+
+    async def close(self, code: int = status.WS_1000_OK) -> None:
         if self.state == WSState.CLOSED:
             raise WebSocketNotConnected()
 
