@@ -1,7 +1,7 @@
 import asyncio
 import io
 import typing
-from pprint import pformat as pf
+#  from pprint import pformat as pf
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -101,16 +101,39 @@ class _WSGIAdapter(requests.adapters.HTTPAdapter):
         return self.build_response(request, raw)
 
 
+class ASGIDataFaker():
+    """
+    Prime and save receive and send messages, respectively, for ASGI test
+    data.
+    """
+    def __init__(self, msgs: list = None):
+        self.rq = asyncio.Queue()
+        self.sq = asyncio.Queue()
+
+        if msgs:
+            [self.rq.put_nowait(m) for m in msgs]
+
+    async def receive(self):
+        return await self.rq.get()
+
+    async def send(self, msg):
+        return await self.sq.put(msg)
+
+    @property
+    def send_q(self):
+        return self.sq
+
+
 class _ASGIAdapter(requests.adapters.HTTPAdapter):
-    def __init__(self, app: typing.Callable) -> None:
+    def __init__(self, app: typing.Callable, asgi_faker: ASGIDataFaker = None) -> None:
         self.app = app
-        self.websocket = {
-            'connected': False,
-            'connecting': False,
-        }
+        self.asgi_faker = asgi_faker
+        # For websocket connections just enforce the expected connection state
+        # and it's transistions
+        self.websocket_state = 'closed'
 
     def send(self, request, *args, **kwargs):
-        print('_ASGIAdapter: outer send')
+        #  print('_ASGIAdapter: outer send')
         scheme, netloc, path, params, query, fragement = urlparse(request.url)
         if ':' in netloc:
             host, port = netloc.split(':', 1)
@@ -153,7 +176,20 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             scope['subprotocols'] = request.headers['Sec-WebSocket-Protocol'].split(',')
 
         async def receive():
-            print('_ASGIAdapter:receive', type_)
+            #  print('_ASGIAdapter:receive', type_)
+            # If a faker is present, use it's message data.
+            if self.asgi_faker:
+                msg = await self.asgi_faker.receive()
+
+                if type_ == 'websocket':
+                    if msg['type'] == 'websocket.connect':
+                        self.websocket_state = 'connecting'
+                    if msg['type'] == 'websocket.disconnect':
+                        self.websocket_state = 'closed'
+
+                #  print('_ASGIAdapter:receive faking:', msg)
+                return msg
+
             #  print('_ASGIAdapter:receive scope', pf(scope))
             body = request.body
             if isinstance(body, str):
@@ -164,8 +200,9 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                 body_bytes = body
 
             if type_ == 'websocket':
-                print('_ASGIAdapter:receive', type_, 'connecting')
-                self.websocket['connecting'] = True
+                self.websocket_state = 'connecting'
+                #  print('_ASGIAdapter:receive', type_, self.websocket_state)
+
                 return {
                     'type': 'websocket.connect',
                 }
@@ -176,9 +213,12 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             }
 
         async def send(message):
-            print('_ASGIAdapter:send', type_)
-            #  print('_ASGIAdapter:scope', pf(scope))
-            print('_ASGIAdapter:send', message)
+            #  print('_ASGIAdapter:send', type_, message)
+
+            if self.asgi_faker:
+                #  print('_ASGIAdapter:send to faker:', message)
+                await self.asgi_faker.send(message)
+
             if message['type'] == 'http.response.start':
                 raw_kwargs['version'] = 11
                 raw_kwargs['status'] = message['status']
@@ -190,26 +230,27 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                 raw_kwargs['original_response'] = _MockOriginalResponse(raw_kwargs['headers'])
             elif message['type'] == 'http.response.body':
                 raw_kwargs['body'] = io.BytesIO(message['body'])
-            elif message['type'] == 'http.disconnect':
-                pass
+            elif message['type'] == 'websocket.accept':
+                if self.websocket_state != 'connecting':
+                    raise Exception(
+                        "Sent accept when WebSocket is not connecting, it is %s",
+                        self.websocket_state)
+                self.websocket_state = 'connected'
             elif message['type'] == 'websocket.close':
-                print('_ASGIAdapter:send websocket.close', pf(self.websocket))
-                if self.websocket['connecting']:
-                    print('_ASGIAdapter:send websocket.close instead of connect')
-                    # returning HTTP status code 403
+                if self.websocket_state == 'closed':
+                    raise Exception("Closing a closed websocket")
+
+                # The one case we return an HTTP response, if the
+                # socket connection upgrade is refused
+                if self.websocket_state == 'connecting':
                     raw_kwargs['status'] = 403
                     raw_kwargs['reason'] = 'WebSocket closed'
                     raw_kwargs['body'] = io.BytesIO(b'')
-                    self.websocket['connecting'] = False
-                    self.websocket['connected'] = False
+
+                self.websocket_state = 'closed'
             elif message['type'] == 'websocket.send':
-                print('_ASGIAdapter:send websocket.send', pf(self.websocket))
-                if not self.websocket['connected']:
-                    print('_ASGIAdapter:send websocket.send closed')
-                    raise Exception("WebSocket not connected")
-            elif message['type'] == 'websocket.accept':
-                if not self.websocket['connecting']:
-                    raise Exception("Send accept when WebSocket not connecting")
+                if self.websocket_state != 'connected':
+                    raise Exception("WebSocket not connected, it is %s", self.websocket_state)
 
             elif message['type'] == 'http.exc_info':
                 exc_info = message['exc_info']
@@ -221,23 +262,39 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
         connection = self.app(scope)
 
         loop = asyncio.get_event_loop()
+        #  print('_ASGIAdapter:send running app in loop...')
         loop.run_until_complete(connection(receive, send))
 
-        print('_ASGIAdapter:send building response', pf(raw_kwargs))
+        if scope['type'] == 'websocket':
+            # Since we don't handle the websocket protocol directly in testing
+            # and the test client at this time is not websocket aware, we need
+            # to return a friendly response if there is no HTTP response from
+            # the websocket testing.
+            if not raw_kwargs.get('status'):
+                raw_kwargs['status'] = 200
+                raw_kwargs['body'] = io.BytesIO(b'')
+
+        #  print('_ASGIAdapter:send building http response', pf(raw_kwargs))
         raw = requests.packages.urllib3.HTTPResponse(**raw_kwargs)
         return self.build_response(request, raw)
 
 
 class _TestClient(requests.Session):
-    def __init__(self, app: typing.Callable, scheme: str, hostname: str) -> None:
+    def __init__(self,
+                 app: typing.Callable,
+                 scheme: str,
+                 hostname: str,
+                 asgi_faker: ASGIDataFaker = None) -> None:
         super(_TestClient, self).__init__()
         interface = getattr(app, 'interface', None)
+
         if interface == 'asgi':
-            adapter = _ASGIAdapter(app)
+            adapter = _ASGIAdapter(app, asgi_faker)
             self.mount('ws://', adapter)
             self.mount('wss://', adapter)
         else:
             adapter = _WSGIAdapter(app)
+
         self.mount('http://', adapter)
         self.mount('https://', adapter)
         self.headers.update({'User-Agent': 'testclient'})
@@ -261,3 +318,15 @@ def TestClient(app: typing.Callable, scheme: str='http', hostname: str='testserv
     the `TestClient` class, by declaring this as a function.
     """
     return _TestClient(app, scheme, hostname)
+
+
+def ASGITestClient(
+                   app: typing.Callable,
+                   scheme: str='http',
+                   hostname: str='testserver',
+                   asgi_faker: ASGIDataFaker = None) -> _TestClient:
+    """
+    We have to work around py.test discovery attempting to pick up
+    the `TestClient` class, by declaring this as a function.
+    """
+    return _TestClient(app, scheme, hostname, asgi_faker=asgi_faker)

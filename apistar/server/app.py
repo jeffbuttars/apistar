@@ -1,6 +1,6 @@
 import sys
 import typing
-from pprint import pformat as pf
+#  from pprint import pformat as pf
 
 import werkzeug
 
@@ -169,14 +169,14 @@ class App():
         werkzeug.run_simple(host, port, self, **options)
 
     def render_response(self, return_value: ReturnValue) -> Response:
-        print('render_response', return_value)
+        #  print('render_response', return_value)
         if isinstance(return_value, Response):
-            print('render_response Response', return_value)
+            #  print('render_response Response', return_value)
             return return_value
         elif isinstance(return_value, str):
-            print('render_response HTMLResponse', return_value)
+            #  print('render_response HTMLResponse', return_value)
             return HTMLResponse(return_value)
-        print('render_response JSONResponse', return_value)
+        #  print('render_response JSONResponse', return_value)
         return JSONResponse(return_value)
 
     def exception_handler(self, exc: Exception) -> Response:
@@ -298,7 +298,7 @@ class ASyncApp(App):
 
     def __call__(self, scope):
         async def asgi_callable(receive, send):
-            print('app:asgi_callable', receive, send)
+            #  print('app:asgi_callable', receive, send)
             state = {
                 'scope': scope,
                 'receive': receive,
@@ -316,7 +316,7 @@ class ASyncApp(App):
             else:
                 finalizer = self.finalize_asgi
 
-            print('app:asgi_callable scope', scope)
+            #  print('app:asgi_callable scope', scope)
 
             if self.event_hooks is None:
                 on_request, on_response, on_error = [], [], []
@@ -337,7 +337,7 @@ class ASyncApp(App):
                         [finalizer]
                     )
 
-                print('app:asgi_callable run injector with funcs', pf(funcs), pf(state))
+                #  print('app:asgi_callable run injector with funcs', pf(funcs), pf(state))
                 await self.injector.run_async(funcs, state)
             except Exception as exc:
                 try:
@@ -357,37 +357,38 @@ class ASyncApp(App):
                         await self.injector.run_async(funcs, state)
         return asgi_callable
 
-    async def finalize_websocket(
-        self, ws: WebSocket, response: Response, send: ASGISend, scope: ASGIScope):
-        print('app:finalize_websocket', ws, response, send, pf(scope))
-        print('app:finalize_websocket resp', response, dir(response), response.content)
-
+    def raise_on_error(self, response: Response, scope: ASGIScope):
         if response.exc_info is not None:
             if self.debug or scope.get('raise_exceptions', False):
                 exc_info = response.exc_info
                 raise exc_info[0].with_traceback(exc_info[1], exc_info[2])
 
-        if ws.closed:
-            print('WS OPEN, closing it')
+    async def finalize_websocket(self,
+                                 ws: WebSocket,
+                                 response: Response,
+                                 send: ASGISend,
+                                 scope: ASGIScope):
+        #  print('app:finalize_websocket', ws, response, send, pf(scope))
+        #  print('app:finalize_websocket resp', response, response.content)
+        #  print('app:finalize_websocket resp', response, dir(response), response.content)
+        self.raise_on_error(response, scope)
 
+        if not ws.closed:
+            #  print('WS OPEN, closing it')
             if response.content and ws.connected:
-                print('WS OPEN with response data, sending data and closing it')
-                ws.send(response.content)
+                #  print('WS OPEN with response data, sending data and closing it')
+                await ws.send(response.content)
 
-            ws.close()
+            await ws.close()
 
     async def finalize_asgi(self, response: Response, send: ASGISend, scope: ASGIScope):
-        #  print('app:finalize_asgi', response, send, pf(scope))
-        if response.exc_info is not None:
-            if self.debug or scope.get('raise_exceptions', False):
-                exc_info = response.exc_info
-                raise exc_info[0].with_traceback(exc_info[1], exc_info[2])
+        self.raise_on_error(response, scope)
 
         if scope['type'] == 'websocket':
             await self.finalize_websocket(response, send, scope)
             return
 
-        print('app:finalize_asgi sending http.response.start', response)
+        #  print('app:finalize_asgi sending http.response.start', response)
         await send({
             'type': 'http.response.start',
             'status': response.status_code,
@@ -396,11 +397,11 @@ class ASyncApp(App):
                 for key, value in response.headers
             ]
         })
-        print('app:finalize_asgi sending message',
-              {
-                  'type': 'http.response.body',
-                  'body': response.content
-              })
+        #  print('app:finalize_asgi sending message',
+        #        {
+        #            'type': 'http.response.body',
+        #            'body': response.content
+        #        })
         await send({
             'type': 'http.response.body',
             'body': response.content

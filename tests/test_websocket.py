@@ -1,12 +1,10 @@
 import asyncio
 from uuid import uuid4
-from pprint import pformat as pf
 
 import pytest
 
-from apistar import Route, http, test
+from apistar import Route, test
 from apistar.server.app import ASyncApp
-from apistar.server.asgi import ASGIReceive, ASGIScope, ASGISend
 from apistar.server.websocket import (
     WebSocket,
     WSState,
@@ -22,28 +20,13 @@ default_scope = {
 }
 
 
-class ws_asgi_faker():
-    def __init__(self, msgs: list = None):
-        self.rq = asyncio.Queue()
-        self.sq = asyncio.Queue()
-
-        if msgs:
-            [self.rq.put_nowait(m) for m in msgs]
-
-    async def receive(self):
-        return await self.rq.get()
-
-    async def send(self, msg):
-        return await self.sq.put(msg)
-
-
 def ws_run(func, *args, **kwargs):
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(func(*args, **kwargs))
 
 
 def ws_setup(state=None, msgs=None):
-    asgi = ws_asgi_faker(msgs)
+    asgi = test.ASGIDataFaker(msgs)
     ws = WebSocket(default_scope, asgi.send, asgi.receive)
 
     if state:
@@ -54,14 +37,14 @@ def ws_setup(state=None, msgs=None):
 
 # ## WebScoket Class Tests ###
 def test_bad_scope():
-    asgi = ws_asgi_faker()
+    asgi = test.ASGIDataFaker()
 
     with pytest.raises(AssertionError):
         WebSocket({}, asgi.send, asgi.receive)
 
 
 def test_initial_state():
-    asgi = ws_asgi_faker()
+    asgi = test.ASGIDataFaker()
 
     ws = WebSocket(default_scope, asgi.send, asgi.receive)
     assert ws._scope == default_scope
@@ -311,49 +294,64 @@ def test_close_codes():
 
 
 # ## Client Tests ###
-async def connect_accept(receive: ASGIReceive, send: ASGISend):
-    print('connect_request receiving message...', receive)
-    message = await receive()
-    assert(len(message.keys()) == 1)
-    assert(message == {'type': 'websocket.connect'})
-
-    print('connect_request message:', pf(message))
-    await send({'type': 'websocket.accept'})
-
-    return http.Response('')
+async def client_connect_accept(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
 
 
-async def connect_deny(scope: ASGIScope, receive: ASGIReceive, send: ASGISend):
-    print('connect_deny receiving message...', receive)
-    message = await receive()
-    #  print('connect_request scope', pf(scope))
-    print('connect_deny message:', pf(message))
-    assert(len(message.keys()) == 1)
-    assert(message == {'type': 'websocket.connect'})
-
-    print('connect_deny sending close message:')
-    await send({
-        'type': 'websocket.close',
-        'code': 1001,
-    })
+async def client_connect_deny(ws: WebSocket):
+    await ws.connect(close=True)
+    assert ws.closed
 
 
-async def connect_deny_on_return(receive: ASGIReceive):
-    print('connect_deny receiving message...', receive)
-    message = await receive()
-    #  print('connect_request scope', pf(scope))
-    print('connect_deny message:', pf(message))
-    assert(len(message.keys()) == 1)
-    assert(message == {'type': 'websocket.connect'})
+async def client_connect_deny_on_return(ws: WebSocket):
+    message = await ws.receive()
+    assert message == {'type': 'websocket.connect'}
 
-    print('connect_deny_on_return sending close message:')
-    return 'Denied!'
 
+async def client_disconnect(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    with pytest.raises(WebSocketDisconnect) as e:
+        await ws.receive()
+
+    assert e.value.status_code == ws_status.WS_1001_LEAVING
+    assert 'WebSocket has been disconnected' in e.value.detail
+    assert ws.closed
+
+
+async def client_ping_pong(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    assert await ws.receive() == 'ping'
+
+    await ws.send('pong')
+    assert ws.connected
+
+    await ws.close()
+    assert ws.closed
+
+
+async def client_ping_pong_dong(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    assert await ws.receive() == 'ping'
+
+    await ws.send('pong')
+    assert ws.connected
+
+    return 'dong'
 
 routes = [
-    Route('/connect/accept/', 'GET', connect_accept),
-    Route('/connect/deny/', 'GET', connect_deny),
-    Route('/connect/deny/return/', 'GET', connect_deny_on_return),
+    Route('/connect/accept/', 'GET', client_connect_accept),
+    Route('/connect/deny/', 'GET', client_connect_deny),
+    Route('/connect/deny/return/', 'GET', client_connect_deny_on_return),
+    Route('/disconnect/', 'GET', client_disconnect),
+    Route('/ping/pong/', 'GET', client_ping_pong),
+    Route('/ping/pong/dong/', 'GET', client_ping_pong_dong),
 ]
 
 
@@ -366,8 +364,16 @@ ws_headers = {
 
 @pytest.fixture(scope='module')
 def client():
-    app = ASyncApp(routes=routes)
-    return test.TestClient(app, scheme='ws')
+    def asgi_client(msgs: list = None):
+        app = ASyncApp(routes=routes)
+        asgi_faker = None
+
+        if msgs:
+            asgi_faker = test.ASGIDataFaker(msgs)
+
+        return test.ASGITestClient(app, scheme='ws', asgi_faker=asgi_faker), asgi_faker
+
+    return asgi_client
 
 
 def get_headers(hdrs: dict = None):
@@ -380,20 +386,55 @@ def get_headers(hdrs: dict = None):
     return headers
 
 
-#  def test_connect_accept(client):
-#      response = client.get('/connect/accept/', headers=get_headers())
-#      message = response.text
-#      print('test_connect_accept', message)
+# Some basic ASGI level tests
+def test_client_connect_accept(client):
+    cl, _ = client()
+    response = cl.get('/connect/accept/', headers=get_headers())
+    message = response.text
 
-#      assert(message == '')
+    assert(message == '')
 
 
-def test_connect_deny(client):
-    headers = ws_headers.copy()
-    headers['Sec-WebSocket-Key'] = uuid4().hex
+def test_client_connect_deny(client):
+    headers = get_headers()
+    cl, _ = client()
 
-    response = client.get('/connect/deny/', headers=headers)
-    print('test_connect_deny', response)
-    print('test_connect_deny headers', response.headers)
-    print('test_connect_deny content', response.content)
+    response = cl.get('/connect/deny/', headers=headers)
     assert(response.status_code == 403)
+
+
+def test_client_disconnect(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.disconnect', 'code': ws_status.WS_1001_LEAVING},
+    ])
+    cl.get('/disconnect/', headers=headers)
+
+
+def test_client_ping_pong(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.receive', 'text': 'ping'}
+    ])
+    cl.get('/ping/pong/', headers=headers)
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
+
+
+def test_client_ping_pong_dong(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.receive', 'text': 'ping'}
+    ])
+    cl.get('/ping/pong/dong/', headers=headers)
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'bytes': b'dong'}
