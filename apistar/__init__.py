@@ -9,11 +9,11 @@
 from apistar.client import Client
 from apistar.document import Document, Field, Link, Section
 from apistar.main import main
-from apistar.server import App, ASyncApp, Component, Include, Route
+from apistar.server import App, ASyncApp, Component, Include, Route, WebSocket
 from apistar.test import TestClient
 
 __version__ = '0.5.33'
 __all__ = [
     'App', 'ASyncApp', 'Client', 'Component', 'Document', 'Section', 'Link', 'Field',
-    'Route', 'Include', 'TestClient', 'http', 'main'
+    'Route', 'Include', 'TestClient', 'http', 'main', 'WebSocket',
 ]

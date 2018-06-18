@@ -1,11 +1,7 @@
 import enum
 import typing
 
-from apistar.exceptions import HTTPException
-
-#  ASGIScope = typing.NewType('ASGIScope', dict)
-#  ASGIReceive = typing.NewType('ASGIReceive', typing.Callable)
-#  ASGISend = typing.NewType('ASGISend', typing.Callable)
+from apistar.exceptions import WebSocketDisconnect, WebSocketNotConnected, WebSocketProtocolError
 
 
 class Status():
@@ -123,21 +119,6 @@ class WSState(enum.Enum):
     CONNECTING = 0
     CONNECTED = 1
     CLOSED = 2
-
-
-class WebSocketNotConnected(HTTPException):
-    default_status_code = status.WS_1000_OK
-    default_detail = 'WebSocket is not connected or open'
-
-
-class WebSocketDisconnect(HTTPException):
-    default_status_code = status.WS_1000_OK
-    default_detail = 'WebSocket has been disconnected'
-
-
-class WebSocketProtocolError(HTTPException):
-    default_status_code = status.WS_1002_PROT_ERROR
-    default_detail = 'WebSocket protocol error'
 
 
 class WebSocket(object):

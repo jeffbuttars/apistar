@@ -114,3 +114,18 @@ class NotAcceptable(HTTPException):
 class UnsupportedMediaType(HTTPException):
     default_status_code = 415
     default_detail = 'Unsupported Content-Type header in request'
+
+
+class WebSocketNotConnected(HTTPException):
+    default_status_code = 1000
+    default_detail = 'WebSocket is not connected or open'
+
+
+class WebSocketDisconnect(HTTPException):
+    default_status_code = 1000
+    default_detail = 'WebSocket has been disconnected'
+
+
+class WebSocketProtocolError(HTTPException):
+    default_status_code = 1002
+    default_detail = 'WebSocket protocol error'
