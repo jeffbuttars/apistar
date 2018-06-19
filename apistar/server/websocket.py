@@ -1,5 +1,6 @@
 import enum
 import typing
+import json
 
 from apistar.exceptions import WebSocketDisconnect, WebSocketNotConnected, WebSocketProtocolError
 
@@ -195,6 +196,10 @@ class WebSocket(object):
         await self._asgi_send(msg)
         self._state = WSState.CONNECTED
 
+    async def receive_json(self, loads: typing.Callable = None) -> typing.Union[dict, list]:
+        jloads = loads or json.loads
+        return jloads(await self.receive())
+
     async def receive(self) -> typing.Union[str, bytes]:
         if self._state != WSState.CONNECTED:
             raise WebSocketNotConnected()
@@ -207,11 +212,13 @@ class WebSocket(object):
 
         return msg.get('text', msg.get('bytes'))
 
-    async def send(self, data: typing.Union[str, bytes]) -> None:
-
+    async def send_msg(self, msg: dict) -> None:
         if self._state != WSState.CONNECTED:
             raise WebSocketNotConnected()
 
+        await self._asgi_send(msg)
+
+    async def send(self, data: typing.Union[str, bytes]) -> None:
         msg = {
             'type': 'websocket.send',
         }
@@ -222,7 +229,17 @@ class WebSocket(object):
             else:
                 msg['text'] = data
 
-        await self._asgi_send(msg)
+        await self.send_msg(msg)
+
+    async def send_json(self,
+                        data: typing.Union[dict, list],
+                        dumps: typing.Callable = None) -> None:
+        jdumps = dumps or json.dumps
+
+        await self.send({
+            'type': 'websocket.send',
+            'text': jdumps(data)
+        })
 
     async def close(self, code: int = status.WS_1000_OK) -> None:
         if self._state == WSState.CLOSED:
