@@ -20,7 +20,7 @@ from apistar.server.validation import VALIDATION_COMPONENTS
 from apistar.server.wsgi import (
     RESPONSE_STATUS_TEXT, WSGI_COMPONENTS, WSGIEnviron, WSGIStartResponse
 )
-from apistar.server.websocket import WebSocket, WSState
+from apistar.server.websocket import WebSocket
 
 
 class App():
