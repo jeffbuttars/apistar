@@ -407,7 +407,7 @@ def client():
         if msgs:
             asgi_faker = test.ASGIDataFaker(msgs)
 
-        return test.ASGITestClient(app, scheme='ws', asgi_faker=asgi_faker), asgi_faker
+        return test.TestClient(app, scheme='ws', asgi_faker=asgi_faker), asgi_faker
 
     return asgi_client
 

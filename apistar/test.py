@@ -1,7 +1,6 @@
 import asyncio
 import io
 import typing
-#  from pprint import pformat as pf
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -133,7 +132,6 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
         self.websocket_state = 'closed'
 
     def send(self, request, *args, **kwargs):
-        #  print('_ASGIAdapter: outer send')
         scheme, netloc, path, params, query, fragement = urlparse(request.url)
         if ':' in netloc:
             host, port = netloc.split(':', 1)
@@ -142,7 +140,7 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             host = netloc
             port = {'http': 80, 'https': 443, 'ws': 80, 'wss': 443}[scheme]
 
-        type_ = {'http': 'http', 'https': 'http', 'ws': 'websocket', 'ws': 'websocket'}[scheme]
+        type_ = {'http': 'http', 'https': 'http', 'ws': 'websocket', 'wss': 'websocket'}[scheme]
 
         # Include the 'host' header.
         if 'host' in request.headers:
@@ -176,7 +174,6 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             scope['subprotocols'] = request.headers['Sec-WebSocket-Protocol'].split(',')
 
         async def receive():
-            #  print('_ASGIAdapter:receive', type_)
             # If a faker is present, use it's message data.
             if self.asgi_faker:
                 msg = await self.asgi_faker.receive()
@@ -187,10 +184,8 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                     if msg['type'] == 'websocket.disconnect':
                         self.websocket_state = 'closed'
 
-                #  print('_ASGIAdapter:receive faking:', msg)
                 return msg
 
-            #  print('_ASGIAdapter:receive scope', pf(scope))
             body = request.body
             if isinstance(body, str):
                 body_bytes = body.encode("utf-8")  # type: bytes
@@ -201,7 +196,6 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
 
             if type_ == 'websocket':
                 self.websocket_state = 'connecting'
-                #  print('_ASGIAdapter:receive', type_, self.websocket_state)
 
                 return {
                     'type': 'websocket.connect',
@@ -213,10 +207,7 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
             }
 
         async def send(message):
-            #  print('_ASGIAdapter:send', type_, message)
-
             if self.asgi_faker:
-                #  print('_ASGIAdapter:send to faker:', message)
                 await self.asgi_faker.send(message)
 
             if message['type'] == 'http.response.start':
@@ -262,7 +253,6 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
         connection = self.app(scope)
 
         loop = asyncio.get_event_loop()
-        #  print('_ASGIAdapter:send running app in loop...')
         loop.run_until_complete(connection(receive, send))
 
         if scope['type'] == 'websocket':
@@ -274,7 +264,6 @@ class _ASGIAdapter(requests.adapters.HTTPAdapter):
                 raw_kwargs['status'] = 200
                 raw_kwargs['body'] = io.BytesIO(b'')
 
-        #  print('_ASGIAdapter:send building http response', pf(raw_kwargs))
         raw = requests.packages.urllib3.HTTPResponse(**raw_kwargs)
         return self.build_response(request, raw)
 
@@ -312,21 +301,13 @@ class _TestClient(requests.Session):
         return super().request(method, url, **kwargs)
 
 
-def TestClient(app: typing.Callable, scheme: str='http', hostname: str='testserver') -> _TestClient:
+def TestClient(
+               app: typing.Callable,
+               scheme: str='http',
+               hostname: str='testserver',
+               asgi_faker: ASGIDataFaker = None) -> _TestClient:
     """
     We have to work around py.test discovery attempting to pick up
     the `TestClient` class, by declaring this as a function.
     """
-    return _TestClient(app, scheme, hostname)
-
-
-def ASGITestClient(
-                   app: typing.Callable,
-                   scheme: str='http',
-                   hostname: str='testserver',
-                   asgi_faker: ASGIDataFaker = None) -> _TestClient:
-    """
-    We have to work around py.test discovery attempting to pick up
-    the `TestClient` class, by declaring this as a function.
-    """
-    return _TestClient(app, scheme, hostname, asgi_faker=asgi_faker)
+    return _TestClient(app, scheme, hostname, asgi_faker)
