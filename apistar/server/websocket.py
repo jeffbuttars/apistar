@@ -3,6 +3,7 @@ import typing
 import json
 
 from apistar.exceptions import WebSocketDisconnect, WebSocketNotConnected, WebSocketProtocolError
+from apistar.utils import encode_json
 
 
 class Status():
@@ -234,9 +235,9 @@ class WebSocket(object):
     async def send_json(self,
                         data: typing.Union[dict, list],
                         dumps: typing.Callable = None) -> None:
-        jdumps = dumps or json.dumps
+        jdumps = dumps or encode_json
 
-        await self.send({
+        await self.send_msg({
             'type': 'websocket.send',
             'text': jdumps(data)
         })

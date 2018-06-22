@@ -1,8 +1,10 @@
+import json
 import asyncio
 from uuid import uuid4
 
 import pytest
 
+from apistar.utils import encode_json
 from apistar import Route, test
 from apistar.server.app import ASyncApp
 from apistar.server.websocket import (
@@ -35,7 +37,7 @@ def ws_setup(state=None, msgs=None):
     return (asgi, ws)
 
 
-# ## WebScoket Class Tests ###
+# ### WebScoket Class Tests ###
 def test_bad_scope():
     asgi = test.ASGIDataFaker()
 
@@ -189,6 +191,18 @@ def test_send_bytes():
     }
 
 
+def test_send_json():
+    asgi, ws = ws_setup(state=WSState.CONNECTED)
+
+    ws_run(ws.send_json, {"message": "payload"})
+
+    assert ws.connected
+    assert asgi.sq.get_nowait() == {
+        'type': 'websocket.send',
+        'text':  encode_json({"message": "payload"})
+    }
+
+
 def test_receive_not_connected():
     for state in (WSState.CLOSED, WSState.CONNECTING):
         _, ws = ws_setup(state=state)
@@ -243,6 +257,20 @@ def test_receive_bytes():
 
     assert ws.connected
     assert resp == b'{"json": "message"}'
+
+
+def test_receive_json():
+    _, ws = ws_setup(
+        state=WSState.CONNECTED,
+        msgs=[{
+            'type': 'websocket.receive',
+            'text':  json.dumps({"message": "payload"}),
+        }])
+
+    resp = ws_run(ws.receive_json)
+
+    assert ws.connected
+    assert resp == {"message": "payload"}
 
 
 def test_close_closed():
@@ -334,7 +362,7 @@ async def client_ping_pong(ws: WebSocket):
     assert ws.closed
 
 
-async def client_ping_pong_dong(ws: WebSocket):
+async def client_ping_pong_kong(ws: WebSocket):
     await ws.connect()
     assert ws.connected
 
@@ -343,7 +371,19 @@ async def client_ping_pong_dong(ws: WebSocket):
     await ws.send('pong')
     assert ws.connected
 
-    return 'dong'
+    return 'kong'
+
+
+async def client_ping_pong_kong_json(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    assert await ws.receive_json() == {"play": "ping"}
+
+    await ws.send_json({"play": "pong"})
+    assert ws.connected
+
+    return {"play": "kong"}
 
 routes = [
     Route('/connect/accept/', 'GET', client_connect_accept),
@@ -351,7 +391,8 @@ routes = [
     Route('/connect/deny/return/', 'GET', client_connect_deny_on_return),
     Route('/disconnect/', 'GET', client_disconnect),
     Route('/ping/pong/', 'GET', client_ping_pong),
-    Route('/ping/pong/dong/', 'GET', client_ping_pong_dong),
+    Route('/ping/pong/kong/', 'GET', client_ping_pong_kong),
+    Route('/ping/pong/kong/json', 'GET', client_ping_pong_kong_json),
 ]
 
 
@@ -426,15 +467,35 @@ def test_client_ping_pong(client):
     assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
 
 
-def test_client_ping_pong_dong(client):
+def test_client_ping_pong_kong(client):
     headers = get_headers()
 
     cl, faker = client([
         {'type': 'websocket.connect'},
         {'type': 'websocket.receive', 'text': 'ping'}
     ])
-    cl.get('/ping/pong/dong/', headers=headers)
+    cl.get('/ping/pong/kong/', headers=headers)
 
     assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
     assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
-    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'bytes': b'dong'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'bytes': b'kong'}
+
+
+def test_client_ping_pong_kong_json(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.receive', 'text': encode_json({"play": "ping"})}
+    ])
+    cl.get('/ping/pong/kong/json', headers=headers)
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'text': encode_json({"play": "pong"}),
+    }
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'bytes': encode_json({"play": "kong"}),
+    }
