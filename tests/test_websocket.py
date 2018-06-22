@@ -328,13 +328,9 @@ async def client_connect_accept(ws: WebSocket):
 
 
 async def client_connect_deny(ws: WebSocket):
+    # Explicitly connect and close connection
     await ws.connect(close=True)
     assert ws.closed
-
-
-async def client_connect_deny_on_return(ws: WebSocket):
-    message = await ws.receive()
-    assert message == {'type': 'websocket.connect'}
 
 
 async def client_disconnect(ws: WebSocket):
@@ -388,7 +384,6 @@ async def client_ping_pong_kong_json(ws: WebSocket):
 routes = [
     Route('/connect/accept/', 'GET', client_connect_accept),
     Route('/connect/deny/', 'GET', client_connect_deny),
-    Route('/connect/deny/return/', 'GET', client_connect_deny_on_return),
     Route('/disconnect/', 'GET', client_disconnect),
     Route('/ping/pong/', 'GET', client_ping_pong),
     Route('/ping/pong/kong/', 'GET', client_ping_pong_kong),
@@ -417,12 +412,9 @@ def client():
     return asgi_client
 
 
-def get_headers(hdrs: dict = None):
+def get_headers():
     headers = ws_headers.copy()
     headers['Sec-WebSocket-Key'] = uuid4().hex
-
-    if hdrs:
-        headers.update(hdrs)
 
     return headers
 
