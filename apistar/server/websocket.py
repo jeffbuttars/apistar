@@ -46,34 +46,6 @@ class Status():
         return 1003
 
     @property
-    def WS_1004_RESERVED(self):
-        """
-        Reserved.  The specific meaning might be defined in the future.
-        """
-        return 1004
-
-    @property
-    def WS_1005_NO_STATUS(self):
-        """
-        1005 is a reserved value and MUST NOT be set as a status code in a
-        Close control frame by an endpoint.  It is designated for use in
-        applications expecting a status code to indicate that no status
-        code was actually present.
-        """
-        return 1005
-
-    @property
-    def WS_1006_CLOSED_ABNORMAL(self):
-        """
-        1006 is a reserved value and MUST NOT be set as a status code in a
-        Close control frame by an endpoint.  It is designated for use in
-        applications expecting a status code to indicate that the
-        connection was closed abnormally, e.g., without sending or
-        receiving a Close control frame.
-        """
-        return 1006
-
-    @property
     def WS_1007_INALID_DATA(self):
         """
         1007 indicates that an endpoint is terminating the connection
