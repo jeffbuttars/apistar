@@ -15,5 +15,4 @@ fi
 
 set -x
 
-# PYTHONPATH=. ${PREFIX}pytest --ignore ${VENV_DIR} --ignore apistar/layouts --cov=apistar --cov=tests --cov-report=term-missing ${@}
-PYTHONPATH=. ${PREFIX}pytest --ignore ${VENV_DIR} --ignore apistar/layouts ${@}
+PYTHONPATH=. ${PREFIX}pytest --ignore ${VENV_DIR} --ignore apistar/layouts --cov=apistar --cov=tests --cov-report=term-missing ${@}
