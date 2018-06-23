@@ -444,7 +444,7 @@ def test_client_connect_accept(client):
 def test_client_connect_accept_sub_proto(client):
     cl, _ = client()
     response = cl.get(
-        '/connect/accept/sub/proto',
+        '/connect/accept/sub/proto/',
         headers=get_headers({
             'Sec-WebSocket-Protocol': 'test1.encode.io'
         }))
