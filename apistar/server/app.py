@@ -357,14 +357,10 @@ class ASyncApp(App):
     async def finalize_websocket(self,
                                  ws: WebSocket,
                                  response: Response,
-                                 send: ASGISend,
                                  scope: ASGIScope):
         self.raise_on_error(response, scope)
 
         if not ws.closed:
-            if response.content and ws.connected:
-                await ws.send(response.content)
-
             await ws.close()
 
     async def finalize_http(self, response: Response, send: ASGISend, scope: ASGIScope):

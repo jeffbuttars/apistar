@@ -211,7 +211,7 @@ class WebSocket(object):
 
         await self.send_msg({
             'type': 'websocket.send',
-            'text': jdumps(data)
+            'bytes': jdumps(data)
         })
 
     async def close(self, code: int = status.WS_1000_OK) -> None:
