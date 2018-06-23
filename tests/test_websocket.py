@@ -41,8 +41,10 @@ def ws_setup(state=None, msgs=None):
 def test_bad_scope():
     asgi = test.ASGIDataFaker()
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(WebSocketProtocolError) as e:
         WebSocket({}, asgi.send, asgi.receive)
+
+    assert "Not a websocket scope" in e.value.detail
 
 
 def test_initial_state():
@@ -327,6 +329,11 @@ async def client_connect_accept(ws: WebSocket):
     assert ws.connected
 
 
+async def client_connect_accept_sub_proto(ws: WebSocket):
+    await ws.connect(subprotocol='test1.encode.io')
+    assert ws.connected
+
+
 async def client_connect_deny(ws: WebSocket):
     # Explicitly connect and close connection
     await ws.connect(close=True)
@@ -385,6 +392,7 @@ async def client_ping_pong_kong_json(ws: WebSocket):
 
 routes = [
     Route('/connect/accept/', 'GET', client_connect_accept),
+    Route('/connect/accept/sub/proto/', 'GET', client_connect_accept_sub_proto),
     Route('/connect/deny/', 'GET', client_connect_deny),
     Route('/disconnect/', 'GET', client_disconnect),
     Route('/ping/pong/', 'GET', client_ping_pong),
@@ -414,9 +422,12 @@ def client():
     return asgi_client
 
 
-def get_headers():
+def get_headers(client_headers=None):
     headers = ws_headers.copy()
     headers['Sec-WebSocket-Key'] = uuid4().hex
+
+    if client_headers:
+        headers.update(client_headers)
 
     return headers
 
@@ -425,6 +436,18 @@ def get_headers():
 def test_client_connect_accept(client):
     cl, _ = client()
     response = cl.get('/connect/accept/', headers=get_headers())
+    message = response.text
+
+    assert(message == '')
+
+
+def test_client_connect_accept_sub_proto(client):
+    cl, _ = client()
+    response = cl.get(
+        '/connect/accept/sub/proto',
+        headers=get_headers({
+            'Sec-WebSocket-Protocol': 'test1.encode.io'
+        }))
     message = response.text
 
     assert(message == '')
