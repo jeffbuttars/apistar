@@ -105,7 +105,8 @@ class WebSocket(object):
                  asgi_receive: typing.Callable,
                  ) -> None:
 
-        assert asgi_scope.get('type') == 'websocket'
+        if asgi_scope.get('type') != 'websocket':
+            raise WebSocketProtocolError(detail="Not a websocket scope")
 
         self._scope = asgi_scope
         self._asgi_send = asgi_send
