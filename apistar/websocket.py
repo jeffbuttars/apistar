@@ -4,6 +4,7 @@ import json
 
 from apistar.exceptions import WebSocketDisconnect, WebSocketNotConnected, WebSocketProtocolError
 from apistar.utils import encode_json
+from apistar import http
 
 
 class Status():
@@ -190,7 +191,11 @@ class WebSocket(object):
         if self._state != WSState.CONNECTED:
             raise WebSocketNotConnected()
 
-        await self._asgi_send(msg)
+        try:
+            await self._asgi_send(msg)
+        except Exception as e:
+            self._state = WSState.CLOSED
+            raise WebSocketDisconnect(str(e))
 
     async def send(self, data: typing.Union[str, bytes]) -> None:
         msg = {
@@ -226,3 +231,13 @@ class WebSocket(object):
 
         await self._asgi_send(message)
         self._state = WSState.CLOSED
+
+
+class WebSocketRequest:
+    def __init__(self,
+                 method: http.Method,
+                 url: http.URL,
+                 headers: http.Headers=None) -> None:
+        self.method = method
+        self.url = url
+        self.headers = http.Headers() if (headers is None) else headers
