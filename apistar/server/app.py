@@ -5,6 +5,7 @@ import werkzeug
 
 from apistar import exceptions
 from apistar.http import HTMLResponse, JSONResponse, PathParams, Response
+from apistar.websocket import WebSocket
 from apistar.server.adapters import ASGItoWSGIAdapter
 from apistar.server.asgi import (
     ASGI_COMPONENTS, ASGIReceive, ASGIScope, ASGISend
@@ -16,7 +17,6 @@ from apistar.server.router import Router
 from apistar.server.staticfiles import ASyncStaticFiles, StaticFiles
 from apistar.server.templates import Templates
 from apistar.server.validation import VALIDATION_COMPONENTS
-from apistar.server.websocket import WebSocket
 from apistar.server.wsgi import (
     RESPONSE_STATUS_TEXT, WSGI_COMPONENTS, WSGIEnviron, WSGIStartResponse
 )
