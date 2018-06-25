@@ -114,6 +114,7 @@ class ASyncInjector(Injector):
     allow_async = True
 
     async def run_async(self, funcs, state):
+        print('run_async', funcs, state)
         funcs = tuple(funcs)
         try:
             steps = self.resolver_cache[funcs]

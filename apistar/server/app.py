@@ -5,7 +5,7 @@ import werkzeug
 
 from apistar import exceptions
 from apistar.http import HTMLResponse, JSONResponse, PathParams, Response
-from apistar.websocket import WebSocket
+from apistar.websocket import WebSocket, WebSocketResponse, WebSocketJSONResponse
 from apistar.server.adapters import ASGItoWSGIAdapter
 from apistar.server.asgi import (
     ASGI_COMPONENTS, ASGIReceive, ASGIScope, ASGISend
@@ -119,7 +119,7 @@ class App():
             'app': App,
             'path_params': PathParams,
             'route': Route,
-            'response': Response
+            'response': Response,
         }
         self.injector = Injector(components, initial_components)
 
@@ -282,6 +282,7 @@ class ASyncApp(App):
             'path_params': PathParams,
             'route': Route,
             'response': Response,
+            'ws_response': WebSocketResponse,
         }
         self.injector = ASyncInjector(components, initial_components)
 
@@ -290,6 +291,18 @@ class ASyncApp(App):
             self.statics = None
         else:
             self.statics = ASyncStaticFiles(static_url, static_dir, packages)
+
+    def render_websocket_response(self, return_value: ReturnValue) -> Response:
+        if return_value is None:
+            return WebSocketResponse()
+
+        if isinstance(return_value, WebSocketResponse):
+            return return_value
+
+        if isinstance(return_value, str) or isinstance(return_value, bytes):
+            return WebSocketResponse(return_value)
+
+        return WebSocketJSONResponse(return_value)
 
     def __call__(self, scope):
         async def asgi_callable(receive, send):
@@ -307,8 +320,10 @@ class ASyncApp(App):
 
             if scope['type'] == 'websocket':
                 finalizer = self.finalize_websocket
+                render_response = self.render_websocket_response
             else:
                 finalizer = self.finalize_http
+                render_response = self.render_response
 
             if self.event_hooks is None:
                 on_request, on_response, on_error = [], [], []
@@ -324,7 +339,7 @@ class ASyncApp(App):
                 else:
                     funcs = (
                         on_request +
-                        [route.handler, self.render_response] +
+                        [route.handler, render_response] +
                         on_response +
                         [finalizer]
                     )
@@ -355,13 +370,16 @@ class ASyncApp(App):
                 raise exc_info[0].with_traceback(exc_info[1], exc_info[2])
 
     async def finalize_websocket(self,
+                                 ws_response: WebSocketResponse,
                                  ws: WebSocket,
-                                 response: Response,
                                  scope: ASGIScope):
-        self.raise_on_error(response, scope)
+        self.raise_on_error(ws_response, scope)
 
         if not ws.closed:
-            await ws.close()
+            if ws_response.content is not None:
+                await ws.send(ws_response.content)
+
+            await ws.close(ws_response.status_code)
 
     async def finalize_http(self, response: Response, send: ASGISend, scope: ASGIScope):
         self.raise_on_error(response, scope)

@@ -241,3 +241,48 @@ class WebSocketRequest:
         self.method = method
         self.url = url
         self.headers = http.Headers() if (headers is None) else headers
+
+
+class WebSocketResponse(http.Response):
+    charset = 'utf-8'
+
+    def __init__(self,
+                 content: typing.Union[str, bytes, None]=None,
+                 status_code: int=1000,
+                 exc_info=None) -> None:
+
+        self.content = self.render(content)
+        self.status_code = status_code
+        self.exc_info = exc_info
+
+    def render(self, content: typing.Any) -> typing.Union[str, bytes, None]:
+        if content is None:
+            return None
+
+        if isinstance(content, bytes):
+            return content
+
+        if isinstance(content, str) and self.charset is not None:
+            return content.encode(self.charset)
+
+        valid_types = "bytes" if self.charset is None else "string or bytes"
+        raise RuntimeError(
+            "%s content must be %s. Got %s." %
+            (self.__class__.__name__, valid_types, type(content).__name__)
+        )
+
+    def set_default_headers(self):
+        raise RuntimeError("WebSocketResponse does not have headers")
+
+
+class WebSocketJSONResponse(WebSocketResponse):
+    charset = None
+    options = {
+        'ensure_ascii': False,
+        'allow_nan': False,
+        'indent': None,
+        'separators': (',', ':'),
+    }
+
+    def render(self, content: typing.Any) -> bytes:
+        return encode_json(content)

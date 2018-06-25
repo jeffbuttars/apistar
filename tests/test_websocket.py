@@ -7,14 +7,8 @@ import pytest
 from apistar.utils import encode_json
 from apistar import Route, test
 from apistar.server.app import ASyncApp
-from apistar.server.websocket import (
-    WebSocket,
-    WSState,
-    WebSocketProtocolError,
-    WebSocketNotConnected,
-    WebSocketDisconnect,
-    status as ws_status,
-)
+from apistar.exceptions import WebSocketProtocolError, WebSocketNotConnected, WebSocketDisconnect
+from apistar.websocket import WebSocket, WSState, status
 
 default_scope = {
     'type': 'websocket',
@@ -66,7 +60,7 @@ def test_connect_not_closed():
         ws_run(ws.connect)
 
     assert ws.connecting
-    assert e.value.status_code == ws_status.WS_1002_PROT_ERROR
+    assert e.value.status_code == status.WS_1002_PROT_ERROR
     assert 'is not closed' in e.value.detail
 
 
@@ -78,7 +72,7 @@ def test_connect_not_connect():
         ws_run(ws.connect)
 
     assert ws.closed
-    assert e.value.status_code == ws_status.WS_1002_PROT_ERROR
+    assert e.value.status_code == status.WS_1002_PROT_ERROR
     assert 'Expected WebSocket `connection` but got: websocket.receive' in e.value.detail
 
 
@@ -90,19 +84,19 @@ def test_connect_close():
     assert ws.closed
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.close',
-        'code': ws_status.WS_1000_OK,
+        'code': status.WS_1000_OK,
     }
 
 
 def test_connect_close_with_code():
     asgi, ws = ws_setup(msgs=[{'type': 'websocket.connect'}])
 
-    ws_run(ws.connect, close=True, close_code=ws_status.WS_1001_LEAVING)
+    ws_run(ws.connect, close=True, close_code=status.WS_1001_LEAVING)
 
     assert ws.closed
     assert asgi.sq.get_nowait() == {
         'type': 'websocket.close',
-        'code': ws_status.WS_1001_LEAVING,
+        'code': status.WS_1001_LEAVING,
     }
 
 
@@ -145,7 +139,7 @@ def test_accept_not_connecting():
             ws_run(ws.accept)
 
         assert ws._state == state
-        assert e.value.status_code == ws_status.WS_1002_PROT_ERROR
+        assert e.value.status_code == status.WS_1002_PROT_ERROR
         assert 'Attempting to accept a WebSocket that is not connecting' in e.value.detail
 
 
@@ -156,7 +150,7 @@ def test_send_not_connected():
         ws_run(ws.send, '')
 
     assert ws.closed
-    assert e.value.status_code == ws_status.WS_1000_OK
+    assert e.value.status_code == status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
     _, ws = ws_setup(state=WSState.CONNECTING)
@@ -165,7 +159,7 @@ def test_send_not_connected():
         ws_run(ws.send, '')
 
     assert ws.connecting
-    assert e.value.status_code == ws_status.WS_1000_OK
+    assert e.value.status_code == status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
 
@@ -213,7 +207,7 @@ def test_receive_not_connected():
             ws_run(ws.receive)
 
         assert ws._state == state
-        assert e.value.status_code == ws_status.WS_1000_OK
+        assert e.value.status_code == status.WS_1000_OK
         assert 'WebSocket is not connected or open' in e.value.detail
 
 
@@ -222,14 +216,14 @@ def test_receive_disconnect():
         state=WSState.CONNECTED,
         msgs=[{
             'type': 'websocket.disconnect',
-            'code': ws_status.WS_1001_LEAVING,
+            'code': status.WS_1001_LEAVING,
         }])
 
     with pytest.raises(WebSocketDisconnect) as e:
         ws_run(ws.receive)
 
     assert ws.closed
-    assert e.value.status_code == ws_status.WS_1001_LEAVING
+    assert e.value.status_code == status.WS_1001_LEAVING
     assert 'WebSocket has been disconnected' in e.value.detail
 
 
@@ -282,7 +276,7 @@ def test_close_closed():
         ws_run(ws.close)
 
     assert ws.closed
-    assert e.value.status_code == ws_status.WS_1000_OK
+    assert e.value.status_code == status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
 
@@ -293,7 +287,7 @@ def test_close():
         ws_run(ws.close)
         asgi.sq.get_nowait() == {
             'type': 'websocket.close',
-            'code': ws_status.WS_1000_OK,
+            'code': status.WS_1000_OK,
         }
 
         assert ws.closed
@@ -302,14 +296,14 @@ def test_close():
 def test_close_codes():
     for state in (WSState.CONNECTED, WSState.CONNECTING):
         for code in (
-            ws_status.WS_1000_OK,
-            ws_status.WS_1001_LEAVING,
-            ws_status.WS_1002_PROT_ERROR,
-            ws_status.WS_1003_UNSUPPORTED_TYPE,
-            ws_status.WS_1007_INALID_DATA,
-            ws_status.WS_1008_POLICY_VIOLATION,
-            ws_status.WS_1009_TOO_BIG,
-            ws_status.WS_1010_TLS_FAIL,
+            status.WS_1000_OK,
+            status.WS_1001_LEAVING,
+            status.WS_1002_PROT_ERROR,
+            status.WS_1003_UNSUPPORTED_TYPE,
+            status.WS_1007_INALID_DATA,
+            status.WS_1008_POLICY_VIOLATION,
+            status.WS_1009_TOO_BIG,
+            status.WS_1010_TLS_FAIL,
         ):
 
             asgi, ws = ws_setup(state=state)
@@ -347,7 +341,7 @@ async def client_disconnect(ws: WebSocket):
     with pytest.raises(WebSocketDisconnect) as e:
         await ws.receive()
 
-    assert e.value.status_code == ws_status.WS_1001_LEAVING
+    assert e.value.status_code == status.WS_1001_LEAVING
     assert 'WebSocket has been disconnected' in e.value.detail
     assert ws.closed
 
@@ -466,7 +460,7 @@ def test_client_disconnect(client):
 
     cl, faker = client([
         {'type': 'websocket.connect'},
-        {'type': 'websocket.disconnect', 'code': ws_status.WS_1001_LEAVING},
+        {'type': 'websocket.disconnect', 'code': status.WS_1001_LEAVING},
     ])
     cl.get('/disconnect/', headers=headers)
 
