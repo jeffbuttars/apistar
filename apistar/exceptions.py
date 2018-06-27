@@ -184,11 +184,13 @@ class WebSocketDisconnect(HTTPException):
     default_detail = 'WebSocket has been disconnected'
 
 
-class WebSocketNotConnected(Exception):
-    def __init__(self):
-        super().__init__('WebSocket is not connected or open')
-
-
 class WebSocketProtocolError(Exception):
-    def __init__(self, reason: str=None):
-        super().__init__(reason or 'WebSocket protocol error')
+    default_detail = 'WebSocket protocol error'
+
+    def __init__(self, detail: str=None):
+        self.detail = detail or self.default_detail
+        super().__init__(self.detail)
+
+
+class WebSocketNotConnected(WebSocketProtocolError):
+    default_detail = 'WebSocket is not connected or open'

@@ -114,7 +114,6 @@ class ASyncInjector(Injector):
     allow_async = True
 
     async def run_async(self, funcs, state):
-        print('run_async', funcs, state)
         funcs = tuple(funcs)
         try:
             steps = self.resolver_cache[funcs]
@@ -127,6 +126,7 @@ class ASyncInjector(Injector):
         for func, is_async, kwargs, consts, output_name, set_return in steps:
             func_kwargs = {key: state[val] for key, val in kwargs.items()}
             func_kwargs.update(consts)
+
             if is_async:
                 state[output_name] = await func(**func_kwargs)
             else:

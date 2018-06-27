@@ -8,7 +8,7 @@ from apistar.utils import encode_json
 from apistar import Route, test
 from apistar.server.app import ASyncApp
 from apistar.exceptions import WebSocketProtocolError, WebSocketNotConnected, WebSocketDisconnect
-from apistar.websocket import WebSocket, WSState, status
+from apistar.websocket import WebSocket, WSState, WebSocketRequest, WebSocketResponse, status
 
 default_scope = {
     'type': 'websocket',
@@ -29,6 +29,22 @@ def ws_setup(state=None, msgs=None):
         ws._state = state
 
     return (asgi, ws)
+
+
+def test_response():
+    response = WebSocketResponse('response')
+    assert response.content == 'response'
+
+    response = WebSocketResponse(b'response')
+    assert response.content == b'response'
+
+    response = WebSocketResponse(None)
+    assert response.content is None
+
+
+def test_bad_response():
+    with pytest.raises(RuntimeError):
+        WebSocketResponse(WebSocket)
 
 
 # ### WebScoket Class Tests ###
@@ -59,8 +75,7 @@ def test_connect_not_closed():
     with pytest.raises(WebSocketProtocolError) as e:
         ws_run(ws.connect)
 
-    assert ws.connecting
-    assert e.value.status_code == status.WS_1002_PROT_ERROR
+    assert ws.closed
     assert 'is not closed' in e.value.detail
 
 
@@ -72,7 +87,6 @@ def test_connect_not_connect():
         ws_run(ws.connect)
 
     assert ws.closed
-    assert e.value.status_code == status.WS_1002_PROT_ERROR
     assert 'Expected WebSocket `connection` but got: websocket.receive' in e.value.detail
 
 
@@ -139,7 +153,6 @@ def test_accept_not_connecting():
             ws_run(ws.accept)
 
         assert ws._state == state
-        assert e.value.status_code == status.WS_1002_PROT_ERROR
         assert 'Attempting to accept a WebSocket that is not connecting' in e.value.detail
 
 
@@ -150,7 +163,6 @@ def test_send_not_connected():
         ws_run(ws.send, '')
 
     assert ws.closed
-    assert e.value.status_code == status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
     _, ws = ws_setup(state=WSState.CONNECTING)
@@ -159,7 +171,6 @@ def test_send_not_connected():
         ws_run(ws.send, '')
 
     assert ws.connecting
-    assert e.value.status_code == status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
 
@@ -207,7 +218,6 @@ def test_receive_not_connected():
             ws_run(ws.receive)
 
         assert ws._state == state
-        assert e.value.status_code == status.WS_1000_OK
         assert 'WebSocket is not connected or open' in e.value.detail
 
 
@@ -276,7 +286,6 @@ def test_close_closed():
         ws_run(ws.close)
 
     assert ws.closed
-    assert e.value.status_code == status.WS_1000_OK
     assert 'WebSocket is not connected or open' in e.value.detail
 
 
@@ -318,7 +327,14 @@ def test_close_codes():
 
 
 # ## Client Tests ###
-async def client_connect_accept(ws: WebSocket):
+async def client_connect_accept(ws: WebSocket, request: WebSocketRequest):
+    assert request.method == 'GET'
+    assert request.url == 'ws://testserver/connect/accept/'
+    assert request.headers['connection'] == 'upgrade'
+    assert request.headers['upgrade'] == 'websocket'
+    assert request.headers['sec-websocket-protocol'] == 'v1.test.encode.io'
+    assert request.headers['sec-websocket-key']
+
     await ws.connect()
     assert ws.connected
 
@@ -359,6 +375,15 @@ async def client_ping_pong(ws: WebSocket):
     assert ws.closed
 
 
+async def client_ping_pong_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    assert await ws.receive() == 'ping'
+
+    return 'pong'
+
+
 async def client_ping_pong_kong(ws: WebSocket):
     await ws.connect()
     assert ws.connected
@@ -370,6 +395,18 @@ async def client_ping_pong_kong(ws: WebSocket):
 
     await ws.send('kong')
     assert ws.connected
+
+
+async def client_ping_pong_kong_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    assert await ws.receive() == 'ping'
+
+    await ws.send('pong')
+    assert ws.connected
+
+    return 'kong'
 
 
 async def client_ping_pong_kong_json(ws: WebSocket):
@@ -384,14 +421,62 @@ async def client_ping_pong_kong_json(ws: WebSocket):
     await ws.send_json({"play": "kong"})
     assert ws.connected
 
+
+async def client_ping_pong_kong_json_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    assert await ws.receive_json() == {"play": "ping"}
+
+    await ws.send_json({"play": "pong"})
+    assert ws.connected
+
+    return {"play": "kong"}
+
+
+async def client_somebytes_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    return b'somebytes'
+
+
+async def client_astring_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    return 'astring'
+
+
+async def client_anarray_json_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    return ['a', 'b', {'c': 'value'}]
+
+
+async def client_invalid_response(ws: WebSocket):
+    await ws.connect()
+    assert ws.connected
+
+    return WebSocket
+
+
 routes = [
     Route('/connect/accept/', 'GET', client_connect_accept),
     Route('/connect/accept/sub/proto/', 'GET', client_connect_accept_sub_proto),
     Route('/connect/deny/', 'GET', client_connect_deny),
     Route('/disconnect/', 'GET', client_disconnect),
     Route('/ping/pong/', 'GET', client_ping_pong),
+    Route('/ping/pong/response/', 'GET', client_ping_pong_response),
     Route('/ping/pong/kong/', 'GET', client_ping_pong_kong),
+    Route('/ping/pong/kong/response/', 'GET', client_ping_pong_kong_response),
     Route('/ping/pong/kong/json', 'GET', client_ping_pong_kong_json),
+    Route('/ping/pong/kong/json/response/', 'GET', client_ping_pong_kong_json_response),
+    Route('/somebytes/response/', 'GET', client_somebytes_response),
+    Route('/astring/response/', 'GET', client_astring_response),
+    Route('/anarray/json/response/', 'GET', client_anarray_json_response),
+    Route('/invalid/response/', 'GET', client_invalid_response),
 ]
 
 
@@ -478,6 +563,19 @@ def test_client_ping_pong(client):
     assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
 
 
+def test_client_ping_pong_response(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.receive', 'text': 'ping'}
+    ])
+    cl.get('/ping/pong/response/', headers=headers)
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
+
+
 def test_client_ping_pong_kong(client):
     headers = get_headers()
 
@@ -486,6 +584,20 @@ def test_client_ping_pong_kong(client):
         {'type': 'websocket.receive', 'text': 'ping'}
     ])
     cl.get('/ping/pong/kong/', headers=headers)
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
+    assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'kong'}
+
+
+def test_client_ping_pong_kong_response(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.receive', 'text': 'ping'}
+    ])
+    cl.get('/ping/pong/kong/response/', headers=headers)
 
     assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
     assert faker.send_q.get_nowait() == {'type': 'websocket.send', 'text': 'pong'}
@@ -510,3 +622,71 @@ def test_client_ping_pong_kong_json(client):
         'type': 'websocket.send',
         'bytes': b'{"play":"kong"}',
     }
+
+
+def test_client_ping_pong_kong_json_response(client):
+    headers = get_headers()
+
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+        {'type': 'websocket.receive', 'text': encode_json({"play": "ping"})}
+    ])
+    cl.get('/ping/pong/kong/json/response/', headers=headers)
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'bytes': b'{"play":"pong"}',
+    }
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'bytes': b'{"play":"kong"}',
+    }
+
+
+def test_somebytes_response(client):
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+    ])
+    cl.get('/somebytes/response/', headers=get_headers())
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'bytes': b'somebytes',
+    }
+
+
+def test_astring_response(client):
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+    ])
+    cl.get('/astring/response/', headers=get_headers())
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'text': 'astring',
+    }
+
+
+def test_anarray_json_response(client):
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+    ])
+    cl.get('/anarray/json/response/', headers=get_headers())
+
+    assert faker.send_q.get_nowait() == {'type': 'websocket.accept'}
+    assert faker.send_q.get_nowait() == {
+        'type': 'websocket.send',
+        'bytes': b'["a","b",{"c":"value"}]',
+    }
+
+
+def test_invalid_response(client):
+    cl, faker = client([
+        {'type': 'websocket.connect'},
+    ])
+
+    with pytest.raises(KeyError):
+        cl.get('/invalid/response/', headers=get_headers())

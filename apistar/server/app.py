@@ -292,7 +292,8 @@ class ASyncApp(App):
         else:
             self.statics = ASyncStaticFiles(static_url, static_dir, packages)
 
-    def render_websocket_response(self, return_value: ReturnValue) -> Response:
+    def render_websocket_response(self, return_value: ReturnValue) -> WebSocketResponse:
+        print('render_websocket_response', return_value)
         if return_value is None:
             return WebSocketResponse()
 
