@@ -186,7 +186,7 @@ class WebSocket(object):
 
         if msg['type'] == 'websocket.disconnect':
             self._state = WSState.CLOSED
-            raise WebSocketDisconnect(status_code=msg['code'])
+            raise WebSocketDisconnect(status_code=msg.get('code', status.WS_1000_OK))
 
         return msg.get('text', msg.get('bytes'))
 
@@ -234,6 +234,9 @@ class WebSocket(object):
 
         await self._asgi_send(message)
         self._state = WSState.CLOSED
+
+    def __repr__(self) -> str:
+        return "<WebSocket state:%s>" % (self._state)
 
 
 class WebSocketRequest:

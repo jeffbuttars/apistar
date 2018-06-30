@@ -179,18 +179,27 @@ class UnsupportedMediaType(HTTPException):
     default_detail = 'Unsupported Content-Type header in request'
 
 
-class WebSocketDisconnect(HTTPException):
+class WebSocketException(Exception):
+    default_status_code = 1000  # type: int
+    default_detail = None  # type: str
+
+    def __init__(self,
+                 detail: Union[str, dict]=None,
+                 status_code: int=None) -> None:
+
+        self.detail = self.default_detail if (detail is None) else detail
+        self.status_code = self.default_status_code if (status_code is None) else status_code
+
+
+class WebSocketDisconnect(WebSocketException):
     default_status_code = 1000
     default_detail = 'WebSocket has been disconnected'
 
 
-class WebSocketProtocolError(Exception):
+class WebSocketProtocolError(WebSocketException):
     default_detail = 'WebSocket protocol error'
-
-    def __init__(self, detail: str=None):
-        self.detail = detail or self.default_detail
-        super().__init__(self.detail)
+    default_status_code = 1002
 
 
-class WebSocketNotConnected(WebSocketProtocolError):
+class WebSocketNotConnected(WebSocketException):
     default_detail = 'WebSocket is not connected or open'

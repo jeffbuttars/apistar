@@ -1,5 +1,6 @@
 import sys
 import typing
+import concurrent
 
 import werkzeug
 
@@ -282,17 +283,21 @@ class ASyncApp(App):
             'path_params': PathParams,
             'route': Route,
             'response': Response,
-            'ws_response': WebSocketResponse,
+            'websocketresponse': WebSocketResponse,
         }
         self.injector = ASyncInjector(components, initial_components)
 
-    def init_staticfiles(self, static_url: str, static_dir: str=None, packages: typing.Sequence[str]=None):
+    def init_staticfiles(self,
+                         static_url: str,
+                         static_dir: str=None,
+                         packages: typing.Sequence[str]=None):
         if not static_dir and not packages:
             self.statics = None
         else:
             self.statics = ASyncStaticFiles(static_url, static_dir, packages)
 
     def render_websocket_response(self, return_value: ReturnValue) -> WebSocketResponse:
+        #  print('render_websocket_response', return_value)
         if return_value is None:
             return WebSocketResponse()
 
@@ -303,6 +308,18 @@ class ASyncApp(App):
             return WebSocketResponse(return_value)
 
         return WebSocketJSONResponse(return_value)
+
+    def websocket_exception_handler(self, exc: Exception) -> WebSocketResponse:
+        #  print('websocket_exception_handler', exc)
+        if isinstance(exc, exceptions.WebSocketDisconnect) or \
+                isinstance(exc, concurrent.futures.CancelledError):
+            # Twisted doesn't shutdown so gracefully when a websocket client
+            # disconnects and the server side doesn't receive the websocket.disconnect
+            # msg. Twisted will eventually cancel the task and raise CancelledError.
+            #  print('websocket_exception_handler creating response')
+            return WebSocketResponse()
+
+        raise
 
     def __call__(self, scope):
         async def asgi_callable(receive, send):
@@ -315,15 +332,27 @@ class ASyncApp(App):
                 'path_params': None,
                 'route': None
             }
+
+            # daphne does not set `method` for websocket connections, but
+            # we rely on it.
+            if not scope.get('method'):
+                scope['method'] = 'GET'
+
+            # Scheme is optional, but we rely on it.
+            if not scope.get('scheme'):
+                scope['scheme'] = 'ws' if scope['type'] == 'websocket' else 'http'
+
             method = scope['method']
             path = scope['path']
 
             if scope['type'] == 'websocket':
                 finalizer = self.finalize_websocket
                 render_response = self.render_websocket_response
+                exception_handler = self.websocket_exception_handler
             else:
                 finalizer = self.finalize_http
                 render_response = self.render_response
+                exception_handler = self.exception_handler
 
             if self.event_hooks is None:
                 on_request, on_response, on_error = [], [], []
@@ -349,7 +378,7 @@ class ASyncApp(App):
                 try:
                     state['exc'] = exc
                     funcs = (
-                        [self.exception_handler] +
+                        [exception_handler] +
                         on_response +
                         [finalizer]
                     )
