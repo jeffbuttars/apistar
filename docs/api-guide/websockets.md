@@ -187,49 +187,48 @@ app = ASyncApp(
 
 ## WebSocket Object
 
-### subprotocols
-    def subprotocols(self) -> list:
-        return self._scope.get('subprotocols', [])
+### Attributes
 
-### connected
-    def connected(self):
-        return self._state == WSState.CONNECTED
+WebSocket.**subprotocols**  
+&nbsp;&nbsp;&nbsp;&nbsp; A list of subprotocols provided by the client's connection
 
-### connecting
-    def connecting(self):
-        return self._state == WSState.CONNECTING
+WebSocket.**connected**  
+&nbsp;&nbsp;&nbsp;&nbsp; Is `True` if the `WebSocket` is connected
 
-### closed
-    def closed(self):
-        return self._state == WSState.CLOSED
+WebSocket.**connecting**  
+&nbsp;&nbsp;&nbsp;&nbsp; Is `True` if the `WebSocket` is connecting
 
-### connect()
-    async def connect(self,
-                      subprotocol: str = None,
-                      close: bool = False,
-                      close_code: int = status.WS_1000_OK) -> None:
+WebSocket.**closed**  
+&nbsp;&nbsp;&nbsp;&nbsp; Is `True` if the `WebSocket` is closed
 
-### accept()
+WebSocket.**connect**(_subprotocol, close, close_code_) -> **None**
+<div style="padding-left: 2rem;">
+Called after a client initiates a connection to finish the connection
+and optionaly reject the connection.
+</div>  
+
+
+WebSocket.**accept**()  
     async def accept(self, subprotocol: str = None) -> None:
 
-### receive_json()
+WebSocket.**receive_json**()  
     async def receive_json(self, loads: typing.Callable = None) -> typing.Union[dict, list]:
 
-### receive()
+WebSocket.**receive**()  
     async def receive(self) -> typing.Union[str, bytes]:
 
-### send_msg()
+WebSocket.**send_msg**()  
     async def send_msg(self, msg: dict) -> None:
 
-### send()
+WebSocket.**send**()  
     async def send(self, data: typing.Union[str, bytes]) -> None:
 
-### send_json()
+WebSocket.**send_json**()  
     async def send_json(self,
                         data: typing.Union[dict, list],
                         dumps: typing.Callable = None) -> None:
 
-### close()
+WebSocket.**close**()  
     async def close(self, code: int = status.WS_1000_OK) -> None:
 
 ## WebSocket Status Codes
