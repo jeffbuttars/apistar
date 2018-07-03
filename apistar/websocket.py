@@ -251,7 +251,7 @@ class WebSocketRequest:
 
 class WebSocketResponse():
     def __init__(self,
-                 content: typing.Union[str, bytes, None]=None,
+                 content: typing.Union[str, bytes]=None,
                  status_code: int=1000,
                  exc_info=None) -> None:
 

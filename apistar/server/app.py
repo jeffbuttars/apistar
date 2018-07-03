@@ -297,7 +297,6 @@ class ASyncApp(App):
             self.statics = ASyncStaticFiles(static_url, static_dir, packages)
 
     def render_websocket_response(self, return_value: ReturnValue) -> WebSocketResponse:
-        #  print('render_websocket_response', return_value)
         if return_value is None:
             return WebSocketResponse()
 
@@ -310,13 +309,16 @@ class ASyncApp(App):
         return WebSocketJSONResponse(return_value)
 
     def websocket_exception_handler(self, exc: Exception) -> WebSocketResponse:
-        #  print('websocket_exception_handler', exc)
-        if isinstance(exc, exceptions.WebSocketDisconnect) or \
-                isinstance(exc, concurrent.futures.CancelledError):
+        if isinstance(exc, exceptions.WebSocketException):
+            return WebSocketResponse(
+                content=exc.detail,
+                status_code=exc.status_code
+            )
+
+        if isinstance(exc, concurrent.futures.CancelledError):
             # Twisted doesn't shutdown so gracefully when a websocket client
             # disconnects and the server side doesn't receive the websocket.disconnect
             # msg. Twisted will eventually cancel the task and raise CancelledError.
-            #  print('websocket_exception_handler creating response')
             return WebSocketResponse()
 
         raise

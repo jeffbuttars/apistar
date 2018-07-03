@@ -181,10 +181,10 @@ class UnsupportedMediaType(HTTPException):
 
 class WebSocketException(Exception):
     default_status_code = 1000  # type: int
-    default_detail = None  # type: str
+    default_detail = None
 
     def __init__(self,
-                 detail: Union[str, dict]=None,
+                 detail: Union[str, bytes]=None,
                  status_code: int=None) -> None:
 
         self.detail = self.default_detail if (detail is None) else detail
